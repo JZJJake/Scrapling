@@ -111,10 +111,15 @@ class FullSiteCrawler:
 
             title = title.strip() if isinstance(title, str) else str(title).strip()
 
+
+            # Use path part of URL for unique filename if possible
+            path_part = urlparse(url).path.strip('/').replace('/', '_')
             filename = "".join([c for c in title if c.isalpha() or c.isdigit() or c==' ']).rstrip()
             if not filename:
                 filename = f"page_{len(self.visited)}"
-            filename = filename.replace(" ", "_")[:50]
+            filename = filename.replace(" ", "_")[:30]
+            if path_part:
+                filename = f"{filename}_{path_part}"[:50]
 
             full_path = self.output_dir / f"{filename}{self.format_ext}"
 
@@ -143,11 +148,7 @@ class FullSiteCrawler:
                 parsed_url = urlparse(full_url)
                 if parsed_url.netloc == self.allowed_domain and full_url not in self.visited:
                     self.visited.add(full_url)
-                    yield Request(
-                        full_url,
-                        callback=self.parse,
-                        meta={'depth': depth + 1, 'source_url': response.url}
-                    )
+                    self.queue.put((full_url, depth + 1, response.url))
 
 
 class ScraplingApp(ctk.CTk):
