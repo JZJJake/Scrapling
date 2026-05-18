@@ -8,7 +8,7 @@ import json
 from urllib.parse import urlparse, urljoin
 import asyncio
 import logging
-from queue import Queue
+
 
 import customtkinter as ctk
 import tkinter as tk
@@ -17,8 +17,8 @@ import networkx as nx
 
 # 引入 Scrapling 核心组件
 try:
-    from scrapling.spiders import Spider, Request, Response
-    from scrapling.fetchers import AsyncDynamicSession, FetcherSession
+    from scrapling.fetchers import Fetcher, DynamicFetcher
+
     from scrapling.core.shell import Convertor
 except ImportError:
     messagebox.showerror("依赖缺失", "未检测到 scrapling，请确保环境正确。")
@@ -57,16 +57,12 @@ class TextRedirector:
         pass
 
 
-class FullSiteSpider(Spider):
+class FullSiteCrawler:
     """
-    全站爬虫，基于 Scrapling Spider 实现。
-    通过 urlparse 限定在同一个 allowed_domain 内部进行递归爬取。
+    全站递归爬虫，基于内置的 Queue 和 Scrapling 原生 Fetcher/DynamicFetcher
     """
-    name = "full_site_spider"
-
-    def __init__(self, start_url, output_dir, engine, css_selector, format_ext, update_graph_cb, log_cb, max_depth=5, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.start_urls = [start_url]
+    def __init__(self, start_url, output_dir, engine, css_selector, format_ext, update_graph_cb, log_cb, max_depth=5):
+        self.start_url = start_url
         self.allowed_domain = urlparse(start_url).netloc
         self.output_dir = output_dir
         self.engine = engine
@@ -74,31 +70,47 @@ class FullSiteSpider(Spider):
         self.format_ext = format_ext
         self.update_graph_cb = update_graph_cb
         self.log_cb = log_cb
-
         self.max_depth = max_depth
         self.visited = set()
 
-        # 并发控制
-        self.concurrent_requests = 5
+        import queue
+        self.queue = queue.Queue()
 
-    def configure_sessions(self, manager):
-        if self.engine == "Dynamic":
-            manager.add("default", AsyncDynamicSession(headless=True, disable_resources=True))
-        else:
-            manager.add("default", FetcherSession(impersonate="chrome"))
+    def start(self):
+        # 初始入队
+        self.queue.put((self.start_url, 0, None))
+        self.visited.add(self.start_url)
 
-    async def parse(self, response: Response):
-        self.log_cb(f"已爬取: {response.url}")
+        while not self.queue.empty():
+            current_url, depth, source_url = self.queue.get()
+            self._process_url(current_url, depth, source_url)
 
-        # Extract title and current depth
-        depth = response.request.meta.get('depth', 0)
-        source_url = response.request.meta.get('source_url', None)
+    def _process_url(self, url, depth, source_url):
+        self.log_cb(f"已爬取: {url}")
 
-        title = response.css('title::text').get()
-        title = title.strip() if title else response.url.split('/')[-1]
-
-        # Save content
         try:
+            response = None
+            if self.engine == "Static":
+                response = Fetcher.get(url)
+            else:
+                response = DynamicFetcher.fetch(url, real_chrome=False)
+
+            if not response or (hasattr(response, 'status') and response.status >= 400):
+                self.log_cb(f"⚠️ 跳过: {url} (页面响应失败)")
+                return
+
+            # Extract title
+            title = ""
+            if hasattr(response, 'css'):
+                title_tag = response.css('title::text')
+                if title_tag:
+                    title = title_tag[0] if type(title_tag) is list else title_tag
+
+            if not title:
+                title = url.split('/')[-1]
+
+            title = title.strip() if isinstance(title, str) else str(title).strip()
+
             filename = "".join([c for c in title if c.isalpha() or c.isdigit() or c==' ']).rstrip()
             if not filename:
                 filename = f"page_{len(self.visited)}"
@@ -154,7 +166,8 @@ class ScraplingApp(ctk.CTk):
         self.node_positions = {}
 
         # 初始化队列用于线程间通信
-        self.ui_queue = Queue()
+        import queue
+        self.ui_queue = queue.Queue()
 
         # RAG 组件
         self.chroma_client = None
@@ -409,15 +422,16 @@ class ScraplingApp(ctk.CTk):
         self.node_positions.clear()
         self.ui_queue.put(("graph_update", None))
 
-        # 启动线程
-        threading.Thread(target=self.crawl_process, args=(url,), daemon=True).start()
-
-    def crawl_process(self, url):
+        # 获取所有 Tkinter 变量，避免在子线程中调用 .get() 导致死锁
         engine = self.engine_var.get()
         fmt = self.format_var.get()
         css = self.css_entry.get().strip()
         depth = int(self.depth_var.get())
 
+        # 启动线程
+        threading.Thread(target=self.crawl_process, args=(url, engine, fmt, css, depth), daemon=True).start()
+
+    def crawl_process(self, url, engine, fmt, css, depth):
         print(f"\n{'='*40}")
         print(f"🚀 新全站任务启动: {url}")
         print(f"⚙️ 引擎: {engine}, 深度: {depth}, 格式: {fmt}")
@@ -427,9 +441,7 @@ class ScraplingApp(ctk.CTk):
             # 记录起始节点
             self.graph.add_node(url, title="Start", path="")
 
-            # 由于 scrapy/scrapling Spider 运行会阻塞当前事件循环
-            # 我们需要在新线程中创建事件循环
-            spider = FullSiteSpider(
+            spider = FullSiteCrawler(
                 start_url=url,
                 output_dir=DEFAULT_OUTPUT_DIR,
                 engine=engine,
@@ -440,8 +452,6 @@ class ScraplingApp(ctk.CTk):
                 max_depth=depth
             )
 
-            # asyncio.run 会创建一个新的事件循环来运行 spider
-            # 对于 scrapling spider，调用 start() 即可
             spider.start()
 
             print("\n🎉 全站爬取任务完成！")

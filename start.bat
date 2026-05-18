@@ -36,6 +36,13 @@ call "%DIR%venv\Scripts\activate.bat"
 echo [Status] Installing dependencies...
 pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r "%DIR%requirements.txt"
 
+:: Install Playwright Chromium dependencies (for DynamicFetcher)
+echo [Status] Installing Playwright Chromium dependencies...
+playwright install chromium
+
+:: Configure HuggingFace mirror for domestic downloads
+set HF_ENDPOINT=https://hf-mirror.com
+
 :: Run application
 echo [Status] Starting ScraplingApp...
 python "%DIR%main.py"
