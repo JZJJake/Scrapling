@@ -20,7 +20,7 @@ if errorlevel 1 (
 :: Create virtual environment (if not exists)
 if not exist "%DIR%venv" (
     echo [Status] Creating virtual environment...
-    python -c "import venv; venv.create('%DIR%venv', with_pip=True)"
+    python -m venv "%DIR%venv"
     if errorlevel 1 (
         echo [Error] Failed to create virtual environment.
         pause
