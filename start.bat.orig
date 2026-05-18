@@ -34,7 +34,7 @@ call "%DIR%venv\Scripts\activate.bat"
 
 :: Install dependencies
 echo [Status] Installing dependencies...
-pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r "%DIR%requirements.txt"
+pip install -r "%DIR%requirements.txt"
 
 :: Run application
 echo [Status] Starting ScraplingApp...
