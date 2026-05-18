@@ -1,42 +1,43 @@
-@echo off
+﻿@echo off
+chcp 65001 >nul
 setlocal
 
-:: 获取当前脚本所在目录
+:: Get current script directory
 set "DIR=%~dp0"
 
 echo ========================================================
-echo        Scrapling 自适应爬虫图形控制台 - 一键启动
+echo        Scrapling App - One-Click Start
 echo ========================================================
 
-:: 检查 Python 环境
+:: Check Python environment
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo [错误] 未检测到 Python，请确保已安装 Python 并在安装时勾选 "Add Python to PATH"
+    echo [Error] Python not found. Please install Python and check "Add Python to PATH".
     pause
     goto :EOF
 )
 
-:: 创建虚拟环境 (如果不存在)
+:: Create virtual environment (if not exists)
 if not exist "%DIR%venv" (
-    echo [状态] 正在创建虚拟环境 ^(首次启动可能需要一些时间^)...
+    echo [Status] Creating virtual environment...
     python -c "import venv; venv.create('%DIR%venv', with_pip=True)"
     if errorlevel 1 (
-        echo [错误] 创建虚拟环境失败
+        echo [Error] Failed to create virtual environment.
         pause
         goto :EOF
     )
 )
 
-:: 激活虚拟环境
-echo [状态] 激活虚拟环境...
+:: Activate virtual environment
+echo [Status] Activating virtual environment...
 call "%DIR%venv\Scripts\activate.bat"
 
-:: 安装依赖
-echo [状态] 检查并安装相关依赖...
+:: Install dependencies
+echo [Status] Installing dependencies...
 pip install -r "%DIR%requirements.txt"
 
-:: 启动应用程序
-echo [状态] 启动应用程序...
+:: Run application
+echo [Status] Starting ScraplingApp...
 python "%DIR%main.py"
 
 endlocal
