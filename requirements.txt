@@ -1,0 +1,6 @@
+scrapling[all]
+customtkinter
+networkx
+chromadb
+sentence-transformers
+markdown
