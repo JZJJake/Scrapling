@@ -139,16 +139,35 @@ class FullSiteCrawler:
             return
 
         # 提取当前页面的所有链接
+        # Look for standard <a> tags
+        extracted_links = set()
         for a_tag in response.css('a'):
             href = a_tag.attrib.get('href')
             if href:
-                full_url = urljoin(response.url, href)
-                full_url = full_url.split('#')[0] # Remove fragment
+                extracted_links.add(href)
 
-                parsed_url = urlparse(full_url)
-                if parsed_url.netloc == self.allowed_domain and full_url not in self.visited:
-                    self.visited.add(full_url)
-                    self.queue.put((full_url, depth + 1, response.url))
+        # Also attempt to find SPA routing elements (like Vue/React elements that have a 'route' or similar attribute)
+        # Note: This is a best-effort heuristic for common SPA frameworks without full click-traversal
+        for el in response.css('[href], [data-href], [to], [route]'):
+            href = el.attrib.get('href') or el.attrib.get('data-href') or el.attrib.get('to') or el.attrib.get('route')
+            if href and isinstance(href, str):
+                extracted_links.add(href)
+
+        for href in extracted_links:
+            full_url = urljoin(response.url, href)
+            # Many SPAs use hash routing (e.g. /index.html#/home). If we aggressively strip the fragment,
+            # we lose the SPA pages and only crawl the index.
+            # We'll only strip fragments if they are clearly just anchor links to the same document (e.g. #top)
+            # A heuristic: if it starts with #/, it's likely a route.
+            if '#' in full_url:
+                hash_part = full_url.split('#', 1)[1]
+                if not hash_part.startswith('/'):
+                    full_url = full_url.split('#')[0]
+
+            parsed_url = urlparse(full_url)
+            if parsed_url.netloc == self.allowed_domain and full_url not in self.visited:
+                self.visited.add(full_url)
+                self.queue.put((full_url, depth + 1, response.url))
 
 
 class ScraplingApp(ctk.CTk):
